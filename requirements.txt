@@ -1,0 +1,9 @@
+langchain
+langchain_community
+langchain_groq
+llama_parse
+streamlit
+unstructured
+markdown
+fastembed
+chromadb
