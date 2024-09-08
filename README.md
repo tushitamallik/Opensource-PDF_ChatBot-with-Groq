@@ -18,3 +18,18 @@ This code implements a Retrieval-Augmented Generation (RAG) based conversational
 4. **Chroma:** Vector database for storing and querying document embeddings
 5. **FastEmbedEmbeddings:** Model for generating document embeddings
 6. **nltk:** Library for natural language processing tasks
+
+## Project Structure:
+
+1. main.py: Main script containing the Streamlit app logic
+2. Helper functions for:
+Loading/parsing uploaded PDF data using LlamaParse
+Saving parsed documents to Markdown format
+Creating and managing the Chroma vector database
+Setting up the Q&A system using the retrieval model and vectorstore
+
+# Additional Notes
+
+1. The code utilizes caching mechanisms (@st.cache_data, @st.cache_resource) to improve performance.
+2. A logging mechanism is implemented to record errors and track processing times.
+3. Session state variables (st.session_state) are used to maintain the interaction history between the user and the chatbot.
