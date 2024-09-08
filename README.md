@@ -28,7 +28,8 @@ Saving parsed documents to Markdown format
 Creating and managing the Chroma vector database
 Setting up the Q&A system using the retrieval model and vectorstore
 
-# Additional Notes
+
+## Additional Notes
 
 1. The code utilizes caching mechanisms (@st.cache_data, @st.cache_resource) to improve performance.
 2. A logging mechanism is implemented to record errors and track processing times.
