@@ -6,6 +6,7 @@ import hashlib
 import nest_asyncio
 import tempfile
 import time
+import shutil
 import streamlit as st
 from pathlib import Path
 from langchain.chains import RetrievalQA
@@ -17,8 +18,18 @@ from langchain_groq import ChatGroq
 from llama_parse import LlamaParse
 from langchain_community.vectorstores import Chroma
 
+import nltk
+nltk.download('punkt_tab')
+nltk.download('averaged_perceptron_tagger_eng')
+
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 # Set up logging
-logging.basicConfig(filename='app1_test.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s', level=logging.WARNING)
+logging.basicConfig(filename='app.log', filemode='w',
+                    format='%(name)s - %(levelname)s - %(message)s',
+                    level=logging.DEBUG)
 
 # Initialize APIs from Streamlit secrets
 groq_api_key = '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'
@@ -28,7 +39,7 @@ llamaparse_api_key = 'llx-vnhbLwp1frdxccOj1ZqdGiSvP8mJQo4FQ4gQjYS1Fj4xkqUM'
 nest_asyncio.apply()
 
 @st.cache_data
-def load_or_parse_data(uploaded_file):
+def load_or_parse_data(uploaded_file, directory_name):
     """Load or parse PDF data."""
     if not hasattr(uploaded_file, 'read'):
         st.error("Invalid file uploaded.")
@@ -40,25 +51,26 @@ def load_or_parse_data(uploaded_file):
             temp_file.write(uploaded_file.read())
             temp_file_path = temp_file.name
 
-        data_file = f"parsed_data_{hashlib.md5(temp_file_path.encode()).hexdigest()}.pkl"
+        data_file = os.path.join(directory_name, f"parsed_data.pkl")
 
         if os.path.exists(data_file):
             logging.info(f"Loading parsed data from file: {data_file}.")
             parsed_data = joblib.load(data_file)
         else:
             parsing_instruction = """
-            The provided document is a leave policy for all the employees,
+            The provided document is a leave policy for all the employees filed by Cognizant,
             with all the days that an employee can avail. This form provides detailed information
-            about the leave policy that can be availed by an employee.
+            about the company's leave policy that can be availed by an employee.
             It includes policy statements, and other relevant disclosures required by the employee.
             It contains many tables. Try to be precise while answering the questions.
             """
             parser = LlamaParse(api_key=llamaparse_api_key, result_type="markdown", parsing_instruction=parsing_instruction)
 
             parsed_data = parser.load_data(temp_file_path)
+            os.makedirs(directory_name, exist_ok=True)
             joblib.dump(parsed_data, data_file)
             logging.info(f"Parsed data saved to file: {data_file}.")
-        
+
         return parsed_data
 
     except Exception as e:
@@ -69,9 +81,9 @@ def load_or_parse_data(uploaded_file):
         if temp_file_path:
             os.remove(temp_file_path)
 
-def save_to_markdown(llama_parse_documents):
+def save_to_markdown(llama_parse_documents, directory_name):
     """Save parsed documents to markdown file."""
-    markdown_path = "output_test.md"
+    markdown_path = os.path.join(directory_name, "output.md")
     try:
         with open(markdown_path, 'w', encoding='utf-8') as f:
             for doc in llama_parse_documents:
@@ -83,7 +95,7 @@ def save_to_markdown(llama_parse_documents):
         return None
 
 @st.cache_resource
-def create_vector_database(markdown_path):
+def create_vector_database(markdown_path, directory_name):
     """Create or load vector database from markdown file."""
     try:
         loader = UnstructuredMarkdownLoader(markdown_path)
@@ -97,7 +109,7 @@ def create_vector_database(markdown_path):
         vs = Chroma.from_documents(
             documents=docs,
             embedding=embed_model,
-            persist_directory="chroma_db_llamaparse1",
+            persist_directory=directory_name,
             collection_name="rag"
         )
 
@@ -110,11 +122,11 @@ def create_vector_database(markdown_path):
         return None, None
 
 @st.cache_resource
-def setup_qa_system(_embed_model):
+def setup_qa_system(_embed_model, directory_name):
     """Setup the Q&A system using the Chroma vectorstore."""
     try:
         chat_model = ChatGroq(temperature=0, model_name="mixtral-8x7b-32768", api_key=groq_api_key)
-        vectorstore = Chroma(embedding_function=_embed_model, persist_directory="chroma_db_llamaparse1", collection_name="rag")
+        vectorstore = Chroma(embedding_function=_embed_model, persist_directory=directory_name, collection_name="rag")
         retriever = vectorstore.as_retriever(search_kwargs={'k': 2})
 
         prompt = PromptTemplate(
@@ -154,14 +166,17 @@ def main():
     uploaded_file = st.sidebar.file_uploader("Upload a PDF file", type="pdf")
 
     if uploaded_file is not None:
+        # Create a unique directory for each uploaded file
+        directory_name = f"session_{hashlib.md5(uploaded_file.name.encode()).hexdigest()}"
+
         with st.spinner('Processing PDF...'):
-            parsed_data = load_or_parse_data(uploaded_file)
+            parsed_data = load_or_parse_data(uploaded_file, directory_name)
             if parsed_data:
-                markdown_path = save_to_markdown(parsed_data)
+                markdown_path = save_to_markdown(parsed_data, directory_name)
                 if markdown_path:
-                    vs, embed_model = create_vector_database(markdown_path)
+                    vs, embed_model = create_vector_database(markdown_path, directory_name)
                     if vs and embed_model:
-                        st.session_state.qa_chain = setup_qa_system(embed_model)
+                        st.session_state.qa_chain = setup_qa_system(embed_model, directory_name)
 
     if st.session_state.qa_chain:
         st.title("Chat with PDF")
